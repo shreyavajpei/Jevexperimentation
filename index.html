@@ -1,0 +1,949 @@
+<meta charset="utf-8">
+<title>Timesheet Lens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one working column — load bar, filters, summary tiles, two charts side by side, people matrix, entry ledger. */
+:root {
+  --bg: #f4f6f8; --surface: #ffffff; --fg: #141a22; --muted: #5a6473; --line: #dce1e7; --soft: #eef1f4;
+  --accent: #0f5f73; --accent-fg: #ffffff;
+  --good: #1d7a3a; --warn: #a15c00;
+  --seq: #2a78d6;
+  --c0: #a8adb4; --c1: #2a78d6; --c2: #eb6834; --c3: #1baf7a; --c4: #eda100;
+  --c5: #e87ba4; --c6: #008300; --c7: #4a3aa7; --c8: #e34948;
+  --f-display: "Bricolage Grotesque", "Hanken Grotesk", system-ui, sans-serif;
+  --f-body: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-data: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1216; --surface: #181c22; --fg: #eef1f5; --muted: #9aa3b0; --line: #2a3038; --soft: #1f242b;
+    --accent: #5bb8cc; --accent-fg: #0b1a1f; --good: #4cc27a; --warn: #e0a54a; --seq: #3987e5;
+    --c0: #5d636b; --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500;
+    --c5: #d55181; --c6: #008300; --c7: #9085e9; --c8: #e66767;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1216; --surface: #181c22; --fg: #eef1f5; --muted: #9aa3b0; --line: #2a3038; --soft: #1f242b;
+  --accent: #5bb8cc; --accent-fg: #0b1a1f; --good: #4cc27a; --warn: #e0a54a; --seq: #3987e5;
+  --c0: #5d636b; --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500;
+  --c5: #d55181; --c6: #008300; --c7: #9085e9; --c8: #e66767;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 24px 64px; display: grid; gap: 20px; }
+h1, h2 { font-family: var(--f-display); text-wrap: balance; margin: 0; }
+h1 { font-size: 1.9rem; letter-spacing: -0.01em; }
+h2 { font-size: 1.1rem; }
+p { margin: 0; }
+.muted { color: var(--muted); }
+.num { font-family: var(--f-data); font-variant-numeric: tabular-nums; }
+.eyebrow { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.top { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: end; justify-content: space-between; }
+.top .intro { display: grid; gap: 4px; max-width: 62ch; min-width: 0; }
+.drop { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border: 1.5px dashed var(--line); border-radius: 10px; padding: 12px 14px; background: var(--surface); }
+.drop.over { border-color: var(--accent); }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 7px 12px; font-weight: 500; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.filename { font-size: 0.85rem; color: var(--muted); max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.notice { display: flex; gap: 10px; align-items: baseline; padding: 10px 14px; border-radius: 8px; background: var(--soft); font-size: 0.9rem; }
+.notice strong { white-space: nowrap; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; min-width: 0; }
+.panel-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+
+details.panel > summary { cursor: pointer; font-family: var(--f-display); font-weight: 600; font-size: 1.05rem; list-style: none; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+details.panel > summary::-webkit-details-marker { display: none; }
+details.panel > summary > span:first-child::before { content: "▸"; display: inline-block; width: 1.1em; color: var(--muted); }
+details.panel[open] > summary > span:first-child::before { content: "▾"; }
+details.panel > summary .muted { font-family: var(--f-body); font-weight: 400; font-size: 0.88rem; }
+.setup { display: grid; gap: 16px; margin-top: 16px; }
+.fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.field { display: grid; gap: 4px; font-size: 0.85rem; }
+.field label { color: var(--muted); font-weight: 500; }
+.field select, .field input, .filters select, .filters input, .search { border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 6px 8px; min-width: 0; width: 100%; }
+.scan { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.88rem; }
+.scan label { display: inline-flex; gap: 6px; align-items: center; }
+.setup-foot { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+
+.filters { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: end; }
+.filters .field { min-width: 150px; flex: 1 1 150px; max-width: 240px; }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 2px; align-content: start; }
+.kpi .v { font-family: var(--f-data); font-size: 1.6rem; font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.kpi .s { font-size: 0.82rem; color: var(--muted); }
+.kpi.flag { border-color: color-mix(in oklab, var(--warn) 55%, var(--line)); }
+.kpi.flag .s { color: var(--warn); }
+
+.duo { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 20px; }
+@media (max-width: 900px) { .duo { grid-template-columns: minmax(0, 1fr); } }
+
+.bars { display: grid; gap: 8px; }
+.bar-row { display: grid; grid-template-columns: minmax(0, 11rem) minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 3px 4px; border-radius: 6px; cursor: default; }
+.bar-row:hover, .bar-row:focus-visible { background: var(--soft); }
+.bar-name { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; min-width: 0; }
+.bar-name span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.track { height: 14px; background: transparent; position: relative; }
+.fill { height: 100%; border-radius: 0 4px 4px 0; min-width: 2px; }
+.bar-val { font-family: var(--f-data); font-size: 0.82rem; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.bar-val .muted { margin-left: 6px; }
+@media (max-width: 520px) { .bar-row { grid-template-columns: minmax(0, 1fr) auto; } .bar-row .track { grid-column: 1 / -1; grid-row: 2; } }
+
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.82rem; color: var(--muted); margin-bottom: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+#trend { width: 100%; min-height: 260px; }
+#trend svg { display: block; width: 100%; height: auto; overflow: visible; }
+#trend text { fill: var(--muted); font-family: var(--f-data); font-size: 11px; }
+#trend .grid { stroke: var(--line); stroke-width: 1; }
+#trend .hit { fill: transparent; }
+#trend .hit:hover { fill: color-mix(in oklab, var(--fg) 6%, transparent); }
+
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
+th, td { padding: 7px 9px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 0.78rem; font-family: var(--f-body); white-space: nowrap; position: sticky; top: 0; background: var(--surface); }
+th.sortable { cursor: pointer; }
+th.sortable:hover { color: var(--fg); }
+th.n { text-align: right; }
+td.n { text-align: right; font-family: var(--f-data); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.matrix td.cell { text-align: right; font-family: var(--f-data); font-variant-numeric: tabular-nums; }
+.matrix td.zero { color: var(--muted); opacity: 0.5; }
+.matrix th .dot { display: inline-block; vertical-align: -1px; margin-right: 5px; }
+.person { white-space: nowrap; }
+.person small { display: block; color: var(--muted); }
+
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
+.chip.good { color: var(--good); background: color-mix(in oklab, var(--good) 14%, transparent); }
+.chip.warn { color: var(--warn); background: color-mix(in oklab, var(--warn) 14%, transparent); }
+
+.ledger-tools { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 12px; }
+.cats { display: flex; flex-wrap: wrap; gap: 6px; }
+.cat-btn { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 3px 10px; font-size: 0.82rem; display: inline-flex; gap: 6px; align-items: center; }
+.cat-btn[aria-pressed="true"] { border-color: var(--fg); background: var(--soft); font-weight: 600; }
+.search { max-width: 260px; }
+.ledger td.narr { min-width: 16rem; max-width: 34rem; }
+.ledger select { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 2px 4px; font-size: 0.82rem; max-width: 13rem; }
+.ledger tr.edited select { border-color: var(--accent); }
+.tag { font-size: 0.72rem; color: var(--accent); font-weight: 600; margin-left: 4px; }
+.ledger .alt { display: block; font-size: 0.75rem; color: var(--muted); }
+
+.rules { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.rule { display: grid; gap: 6px; }
+.rule label { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.9rem; }
+.rule label small { font-weight: 400; color: var(--muted); }
+.rule textarea { border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 7px 8px; min-height: 76px; resize: vertical; font-size: 0.85rem; width: 100%; }
+.check { display: inline-flex; gap: 8px; align-items: center; font-size: 0.9rem; }
+
+#tip { position: fixed; z-index: 10; pointer-events: none; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 0.8rem; box-shadow: 0 6px 20px rgb(0 0 0 / 0.14); min-width: 180px; max-width: 280px; }
+#tip .t { font-weight: 600; margin-bottom: 4px; }
+#tip .r { display: flex; justify-content: space-between; gap: 12px; }
+#tip .r span:first-child { display: inline-flex; align-items: center; gap: 6px; }
+#tip .r span:last-child { font-family: var(--f-data); font-variant-numeric: tabular-nums; }
+#tip .tot { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; font-weight: 600; }
+.empty { padding: 24px; text-align: center; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) { .fill { transition: width 0.25s ease; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="intro">
+      <span class="eyebrow">Timesheet Lens</span>
+      <h1>Where the hours go, billable and otherwise</h1>
+      <p class="muted">Load a timesheet export (.xlsx, .xls or .csv). Entries are sorted into client work, business development, pitching, training and other non-billable time, so you can see effort that invoices don't show.</p>
+    </div>
+    <div class="drop" id="drop">
+      <label class="btn primary" for="file">Load timesheet</label>
+      <input type="file" id="file" accept=".xlsx,.xls,.xlsm,.csv" hidden>
+      <button class="btn" id="load-sample" type="button">Use sample data</button>
+      <span class="filename" id="filename">or drop a file here</span>
+    </div>
+  </header>
+
+  <div class="notice" id="notice"><strong id="notice-title">Sample data.</strong><span id="notice-body">These are invented people and matters. Load your own export to replace them. Your file is read in this browser and is not uploaded anywhere.</span></div>
+
+  <details class="panel" id="setup">
+    <summary><span>Columns and file settings</span><span class="muted" id="setup-summary"></span></summary>
+    <div class="setup">
+      <div class="fields">
+        <div class="field"><label for="m-sheet">Sheet</label><select id="m-sheet"></select></div>
+        <div class="field"><label for="m-person">Person</label><select id="m-person" data-map="person"></select></div>
+        <div class="field"><label for="m-team">Team (optional)</label><select id="m-team" data-map="team"></select></div>
+        <div class="field long-only"><label for="m-date">Date</label><select id="m-date" data-map="date"></select></div>
+        <div class="field long-only"><label for="m-hours">Time recorded</label><select id="m-hours" data-map="hours"></select></div>
+        <div class="field"><label for="m-billable">Billable flag (optional)</label><select id="m-billable" data-map="billable"></select></div>
+        <div class="field"><label for="m-matter">Matter or client (optional)</label><select id="m-matter" data-map="matter"></select></div>
+        <div class="field"><label for="m-narrative">Narrative (optional)</label><select id="m-narrative" data-map="narrative"></select></div>
+        <div class="field"><label for="m-unit">Time is recorded in</label>
+          <select id="m-unit">
+            <option value="hours">Decimal hours (1.5)</option>
+            <option value="units">6-minute units (15 = 1.5h)</option>
+            <option value="min">Minutes (90)</option>
+            <option value="exceltime">Excel time format (1:30)</option>
+          </select></div>
+        <div class="field"><label for="m-dmy">Dates written as</label>
+          <select id="m-dmy"><option value="dmy">Day first (31/08/2026)</option><option value="mdy">Month first (08/31/2026)</option></select></div>
+      </div>
+      <div class="field"><label>Text to read when sorting entries</label><div class="scan" id="m-scan"></div></div>
+      <div class="setup-foot">
+        <button class="btn primary" id="apply-map" type="button">Apply columns</button>
+        <span class="muted" id="parse-report"></span>
+      </div>
+    </div>
+  </details>
+
+  <section class="filters" aria-label="Filters">
+    <div class="field"><label for="f-team">Team</label><select id="f-team"></select></div>
+    <div class="field"><label for="f-person">Person</label><select id="f-person"></select></div>
+    <div class="field"><label for="f-from">From</label><input type="date" id="f-from"></div>
+    <div class="field"><label for="f-to">To</label><input type="date" id="f-to"></div>
+    <button class="btn" id="f-reset" type="button">Clear filters</button>
+  </section>
+
+  <section class="kpis" id="kpis" aria-label="Summary"></section>
+
+  <section class="duo">
+    <div class="panel">
+      <div class="panel-head"><h2>Hours by category</h2><span class="muted" style="font-size:.82rem">share of all recorded time</span></div>
+      <div class="bars" id="bars"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2 id="trend-title">Hours per week</h2><span class="muted" style="font-size:.82rem">stacked by category</span></div>
+      <div class="legend" id="trend-legend"></div>
+      <div id="trend"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>People</h2>
+      <div class="field" style="flex-direction:row;display:flex;gap:8px;align-items:center">
+        <label for="target" class="muted" style="font-size:.85rem">Training target per person for this period</label>
+        <input type="number" id="target" min="0" step="1" value="16" style="width:5rem;border:1px solid var(--line);border-radius:7px;padding:4px 6px;background:var(--surface)"> <span class="muted" style="font-size:.85rem">hours</span>
+      </div>
+    </div>
+    <p class="muted" style="font-size:.82rem;margin-bottom:10px">Cells show hours; shading shows the share of that person's own time. Click a column heading to sort.</p>
+    <div class="scroll"><table class="matrix" id="matrix"></table></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Entries</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span class="muted" id="edit-count" style="font-size:.85rem"></span>
+        <button class="btn" id="copy" type="button">Copy all rows for Excel</button>
+      </div>
+    </div>
+    <div class="ledger-tools">
+      <div class="cats" id="cat-filter" role="group" aria-label="Show category"></div>
+      <input class="search" id="search" type="search" placeholder="Search narrative, matter, person" aria-label="Search entries">
+    </div>
+    <p class="muted" style="font-size:.82rem;margin-bottom:10px">If an entry is in the wrong category, change it here. Your corrections update the dashboard and are listed in the copied rows. They will also be the test cases for checking an AI categoriser against these keyword rules.</p>
+    <div class="scroll"><table class="ledger" id="ledger"></table></div>
+    <p class="muted" id="ledger-more" style="font-size:.82rem;margin-top:8px"></p>
+  </section>
+
+  <details class="panel" id="rules-panel">
+    <summary><span>Sorting rules</span><span class="muted">keyword lists for each category</span></summary>
+    <div class="setup">
+      <p class="muted" style="font-size:.88rem;max-width:75ch">Each entry's text is checked against these keywords. When an entry matches several categories, the one listed first wins. Plurals and -ing forms match automatically (pitch matches pitches and pitching). Keywords in capitals, such as BD or CPD, match only in capitals.</p>
+      <label class="check"><input type="checkbox" id="billable-client" checked> Entries flagged billable always count as client work</label>
+      <div class="rules" id="rules"></div>
+      <div class="setup-foot">
+        <button class="btn primary" id="apply-rules" type="button">Apply rules</button>
+        <button class="btn" id="reset-rules" type="button">Restore default rules</button>
+        <span class="muted" id="rules-report"></span>
+      </div>
+    </div>
+  </details>
+</div>
+<div id="tip" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* ---------- Categories ---------- */
+const CATS = [
+  { id: 'client', name: 'Client work', slot: 1 },
+  { id: 'bd', name: 'Business development', slot: 2 },
+  { id: 'pitch', name: 'Pitching', slot: 3 },
+  { id: 'training', name: 'Training & CPD', slot: 4 },
+  { id: 'knowledge', name: 'Knowledge & precedents', slot: 5 },
+  { id: 'people', name: 'Mentoring & recruitment', slot: 6 },
+  { id: 'probono', name: 'Pro bono', slot: 7 },
+  { id: 'admin', name: 'Firm admin', slot: 8 },
+  { id: 'unc', name: 'Uncategorised', slot: 0 },
+];
+const CAT = Object.fromEntries(CATS.map(c => [c.id, c]));
+const color = id => `var(--c${CAT[id].slot})`;
+// Order in which keyword rules are tried; the first match becomes the entry's category.
+const PRIORITY = ['probono', 'pitch', 'training', 'people', 'knowledge', 'bd', 'admin'];
+const DEFAULT_RULES = {
+  probono: ['pro bono', 'probono', 'legal clinic', 'law centre', 'charity', 'volunteer'],
+  pitch: ['pitch', 'tender', 'RFP', 'RFI', 'beauty parade', 'panel review', 'panel application', 'fee proposal', 'proposal', 'credentials'],
+  training: ['training', 'CPD', 'course', 'webinar', 'e-learning', 'elearning', 'workshop', 'induction', 'masterclass', 'lecture', 'exam', 'study leave'],
+  people: ['mentor', 'mentoring', 'supervise', 'supervising', 'supervision', 'interview', 'recruitment', 'graduate', 'trainee', 'appraisal', 'coaching', 'vacation scheme'],
+  knowledge: ['know-how', 'knowhow', 'precedent', 'template', 'PSL', 'practice note', 'knowledge'],
+  bd: ['business development', 'BD', 'networking', 'client lunch', 'client dinner', 'client entertainment', 'conference', 'marketing', 'newsletter', 'article', 'thought leadership', 'speaking', 'cross-sell', 'relationship'],
+  admin: ['admin', 'timesheet', 'file management', 'file opening', 'internal meeting', 'team meeting', 'conflict check', 'WIP', 'expenses', 'IT'],
+};
+
+/* ---------- Storage (per-viewer conveniences only) ---------- */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+const state = {
+  wb: null, sheet: null, rows: [], headerIdx: 0, headers: [], wide: false, dateCols: [],
+  map: {}, scan: [], unit: 'hours', dmy: true, hasBillable: false,
+  entries: [], sample: true, fileName: '',
+  rules: store.get('tl.rules', DEFAULT_RULES),
+  billableIsClient: store.get('tl.billableIsClient', true),
+  target: store.get('tl.target', 16),
+  filter: { team: '', person: '', from: '', to: '' },
+  ledger: { cat: 'all', q: '' },
+  msort: { key: 'total', dir: -1 },
+};
+let compiled = {};
+
+/* ---------- Parsing helpers ---------- */
+function excelSerialToDate(n) {
+  const d = new Date(Math.round((n - 25569) * 864e5));
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+function toDate(v, dmy) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date && !isNaN(v)) return new Date(v.getFullYear(), v.getMonth(), v.getDate());
+  if (typeof v === 'number') return v > 20000 && v < 80000 ? excelSerialToDate(v) : null;
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return valid(+m[1], +m[2], +m[3]);
+  m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
+  if (m) {
+    let y = +m[3]; if (y < 100) y += 2000;
+    return dmy ? valid(y, +m[2], +m[1]) : valid(y, +m[1], +m[2]);
+  }
+  if (/[a-z]{3}/i.test(s) && /\d{4}/.test(s)) {
+    const t = Date.parse(s);
+    if (!isNaN(t)) { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+  }
+  return null;
+  function valid(y, mo, d) {
+    const x = new Date(y, mo - 1, d);
+    return x.getFullYear() === y && x.getMonth() === mo - 1 && x.getDate() === d ? x : null;
+  }
+}
+function toHours(v, unit) {
+  if (v == null || v === '') return null;
+  let n;
+  if (typeof v === 'number') n = v;
+  else {
+    const s = String(v).trim();
+    const hm = s.match(/^(\d+):(\d{1,2})(?::\d{1,2})?$/);
+    if (hm) return +hm[1] + +hm[2] / 60;
+    n = parseFloat(s.replace(',', '.'));
+  }
+  if (!isFinite(n)) return null;
+  if (unit === 'min') n /= 60;
+  else if (unit === 'units') n /= 10;
+  else if (unit === 'exceltime') n *= 24;
+  return n;
+}
+function toBillable(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'boolean') return v;
+  const s = String(v).trim().toLowerCase();
+  if (/^(y|yes|true|1|b|billable|chargeable|charge|c|bill)$/.test(s)) return true;
+  if (/^(n|no|false|0|nb|nc|n\/c|non[- ]?billable|non[- ]?chargeable|unbilled|no charge|internal)$/.test(s)) return false;
+  return null;
+}
+const dateKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const fromKey = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); };
+const fmtDate = (d, opt = { day: 'numeric', month: 'short', year: 'numeric' }) => d.toLocaleDateString('en-GB', opt);
+const h1 = n => (Math.round(n * 10) / 10).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const pct = n => (isFinite(n) ? Math.round(n * 100) : 0) + '%';
+const colLetter = i => { let s = ''; i++; while (i) { const r = (i - 1) % 26; s = String.fromCharCode(65 + r) + s; i = Math.floor((i - 1) / 26); } return s; };
+
+/* ---------- Sheet analysis ---------- */
+function analyse(rows) {
+  const top = rows.slice(0, 15);
+  const counts = top.map(r => r.filter(c => c != null && c !== '').length);
+  const max = Math.max(0, ...counts);
+  let hi = counts.findIndex(c => c >= Math.max(2, max * 0.6));
+  if (hi < 0) hi = 0;
+  const raw = rows[hi] || [];
+  const width = Math.max(...rows.slice(hi, hi + 200).map(r => r.length), raw.length);
+  const dmy = state.dmy;
+  const headers = [], dateCols = [];
+  for (let i = 0; i < width; i++) {
+    const v = raw[i];
+    const d = toDate(v, dmy);
+    if (d) { dateCols.push({ i, date: d }); headers.push(fmtDate(d)); }
+    else headers.push(v == null || String(v).trim() === '' ? `Column ${colLetter(i)}` : String(v).trim());
+  }
+  state.headerIdx = hi;
+  state.headers = headers;
+  state.wide = dateCols.length >= 3;
+  state.dateCols = state.wide ? dateCols : [];
+  guessMap();
+}
+function guessMap() {
+  const H = state.headers.map(h => h.toLowerCase());
+  const dateSet = new Set(state.dateCols.map(d => d.i));
+  const used = new Set();
+  const find = (res, avoid) => {
+    for (const re of res) {
+      const i = H.findIndex((h, k) => !used.has(k) && !dateSet.has(k) && re.test(h) && !(avoid && avoid.test(h)));
+      if (i >= 0) { used.add(i); return i; }
+    }
+    return -1;
+  };
+  const m = {};
+  m.date = state.wide ? -1 : find([/^(work ?)?date$/, /date/, /^day$/]);
+  m.hours = state.wide ? -1 : find([/^(hours|hrs|time|duration|units|minutes|mins)$/, /hours|hrs|duration|units|time (spent|recorded|worked)|minutes/], /keeper|sheet|stamp/);
+  m.billable = find([/^(billable|chargeable)$/, /billable|chargeable|bill(ing)? ?(status|type|code)|charge ?(type|code)|b\/nb/]);
+  m.person = find([/^(timekeeper|fee ?earner|name|employee|person|lawyer|staff|user|resource)$/, /timekeeper|fee ?earner|employee|lawyer|staff|person|user name|full name|^name/]);
+  m.team = find([/^(team|department|dept|practice ?(group|area)?|group)$/, /team|department|dept|practice|group|office/]);
+  m.matter = find([/^(matter|client|project|engagement)$/, /matter|client|project|engagement|job/]);
+  m.narrative = find([/^(narrative|description|details|notes|work done)$/, /narrative|description|detail|activity|task|note|comment|work done/]);
+  state.map = m;
+  if (m.hours >= 0) {
+    const h = H[m.hours];
+    state.unit = /unit/.test(h) ? 'units' : /min/.test(h) ? 'min' : 'hours';
+  }
+  // Read only columns that describe the work. Role, grade or office columns would
+  // otherwise match keywords (a "Trainee" role column matches "trainee").
+  state.scan = state.headers.map((_, i) => i).filter(i => !dateSet.has(i) &&
+    (i === m.narrative || i === m.matter || /activity|task|phase|work ?type|work ?category|narrative|description/.test(H[i])));
+}
+
+function buildEntries() {
+  const m = state.map, rows = state.rows, out = [];
+  const skipped = { noDate: 0, noHours: 0, total: 0 };
+  state.hasBillable = m.billable >= 0;
+  const text = r => state.scan.map(i => r[i]).filter(v => v != null && v !== '').join(' · ');
+  const cell = (r, i) => (i >= 0 && r[i] != null ? String(r[i]).trim() : '');
+  for (let k = state.headerIdx + 1; k < rows.length; k++) {
+    const r = rows[k];
+    if (!r || !r.some(c => c != null && c !== '')) continue;
+    const person = cell(r, m.person) || 'Unknown';
+    if (/^(grand )?total/i.test(person)) { skipped.total++; continue; }
+    const base = {
+      person, team: cell(r, m.team), matter: cell(r, m.matter), narrative: cell(r, m.narrative),
+      billable: m.billable >= 0 ? toBillable(r[m.billable]) : null, text: text(r), override: null,
+    };
+    if (state.wide) {
+      for (const dc of state.dateCols) {
+        const h = toHours(r[dc.i], state.unit);
+        if (h && h > 0) out.push({ ...base, id: out.length, date: dc.date, hours: h });
+      }
+    } else {
+      const d = toDate(r[m.date], state.dmy);
+      const h = toHours(r[m.hours], state.unit);
+      if (!d) { skipped.noDate++; continue; }
+      if (!h || h <= 0) { skipped.noHours++; continue; }
+      out.push({ ...base, id: out.length, date: d, hours: h });
+    }
+  }
+  state.entries = out;
+  state.skipped = skipped;
+  categoriseAll();
+}
+
+/* ---------- Categorisation (keyword baseline) ---------- */
+function kwRegex(k) {
+  k = k.trim();
+  if (!k) return null;
+  const caps = /^[A-Z0-9&\/]{2,5}$/.test(k);
+  const body = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  const suffix = caps ? '' : '(?:s|es|ing|ed|er|ers)?';
+  return new RegExp('(?<![A-Za-z0-9])' + body + suffix + '(?![A-Za-z0-9])', caps ? '' : 'i');
+}
+function compileRules() {
+  compiled = {};
+  for (const id of PRIORITY) compiled[id] = (state.rules[id] || []).map(kwRegex).filter(Boolean);
+}
+function categorise(e) {
+  const tags = PRIORITY.filter(id => compiled[id].some(re => re.test(e.text)));
+  let auto;
+  if (state.billableIsClient && e.billable === true) auto = 'client';
+  else if (tags.length) auto = tags[0];
+  else if (e.billable === true || !state.hasBillable) auto = 'client';
+  else auto = 'unc';
+  e.tags = tags; e.auto = auto;
+}
+function categoriseAll() { compileRules(); state.entries.forEach(categorise); }
+const catOf = e => e.override || e.auto;
+
+/* ---------- Filtering ---------- */
+function filtered() {
+  const f = state.filter;
+  const from = f.from ? fromKey(f.from) : null, to = f.to ? fromKey(f.to) : null;
+  return state.entries.filter(e =>
+    (!f.team || e.team === f.team) && (!f.person || e.person === f.person) &&
+    (!from || e.date >= from) && (!to || e.date <= to));
+}
+
+/* ---------- Rendering ---------- */
+function renderAll() {
+  const list = filtered();
+  renderKpis(list);
+  renderBars(list);
+  renderTrend(list);
+  renderMatrix(list);
+  renderLedger(list);
+}
+
+function renderKpis(list) {
+  const total = list.reduce((s, e) => s + e.hours, 0);
+  const by = sumBy(list);
+  const people = new Set(list.map(e => e.person)).size;
+  const billH = list.filter(e => e.billable === true).reduce((s, e) => s + e.hours, 0);
+  const nonClient = total - (by.client || 0);
+  const unc = by.unc || 0;
+  const dates = list.map(e => e.date.getTime());
+  const span = dates.length ? `${fmtDate(new Date(Math.min(...dates)), { day: 'numeric', month: 'short' })} – ${fmtDate(new Date(Math.max(...dates)))}` : '–';
+  const topNon = CATS.filter(c => c.id !== 'client' && c.id !== 'unc').sort((a, b) => (by[b.id] || 0) - (by[a.id] || 0))[0];
+  const tiles = [
+    { label: 'Hours recorded', v: h1(total), s: `${list.length.toLocaleString('en-GB')} entries · ${span}` },
+    state.hasBillable
+      ? { label: 'Billable', v: pct(billH / total), s: `${h1(billH)}h flagged billable` }
+      : { label: 'Client work', v: pct((by.client || 0) / total), s: 'no billable column mapped' },
+    { label: 'Non-client time', v: h1(nonClient), s: topNon && by[topNon.id] ? `largest: ${topNon.name.toLowerCase()} (${h1(by[topNon.id])}h)` : 'none recorded' },
+    { label: 'Uncategorised', v: pct(unc / total), s: unc ? `${h1(unc)}h matched no rule` : 'every entry matched a rule', flag: total && unc / total > 0.1 },
+    { label: 'People', v: people.toLocaleString('en-GB'), s: people ? `${h1(total / people)}h each on average` : '' },
+  ];
+  $('#kpis').innerHTML = tiles.map(t => `<div class="kpi${t.flag ? ' flag' : ''}"><span class="eyebrow">${t.label}</span><span class="v">${total ? t.v : '–'}</span><span class="s">${t.flag ? '⚠ ' : ''}${esc(t.s)}</span></div>`).join('');
+}
+
+function sumBy(list) {
+  const by = {};
+  for (const e of list) { const c = catOf(e); by[c] = (by[c] || 0) + e.hours; }
+  return by;
+}
+
+function renderBars(list) {
+  const total = list.reduce((s, e) => s + e.hours, 0);
+  const by = sumBy(list);
+  const stats = {};
+  for (const e of list) { const c = catOf(e); (stats[c] ||= { n: 0, people: new Set() }).n++; stats[c].people.add(e.person); }
+  const rows = CATS.filter(c => by[c.id]).sort((a, b) => by[b.id] - by[a.id]);
+  const max = Math.max(0, ...rows.map(c => by[c.id]));
+  $('#bars').innerHTML = rows.length ? rows.map(c => `
+    <div class="bar-row" tabindex="0" data-cat="${c.id}" aria-label="${c.name}: ${h1(by[c.id])} hours, ${pct(by[c.id] / total)}">
+      <div class="bar-name"><span class="dot" style="background:${color(c.id)}"></span><span>${c.name}</span></div>
+      <div class="track"><div class="fill" style="width:${(by[c.id] / max) * 100}%;background:${color(c.id)}"></div></div>
+      <div class="bar-val">${h1(by[c.id])}h<span class="muted">${pct(by[c.id] / total)}</span></div>
+    </div>`).join('') : '<div class="empty">No entries match these filters.</div>';
+  $('#bars').querySelectorAll('.bar-row').forEach(el => {
+    const c = el.dataset.cat, s = stats[c];
+    const html = () => `<div class="t">${CAT[c].name}</div>
+      <div class="r"><span>Hours</span><span>${h1(by[c])}</span></div>
+      <div class="r"><span>Share of total</span><span>${pct(by[c] / total)}</span></div>
+      <div class="r"><span>Entries</span><span>${s.n.toLocaleString('en-GB')}</span></div>
+      <div class="r"><span>People</span><span>${s.people.size}</span></div>`;
+    bindTip(el, html);
+  });
+}
+
+function niceMax(v) {
+  if (v <= 0) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const m of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p;
+  return 10 * p;
+}
+
+function renderTrend(list) {
+  const el = $('#trend');
+  if (!list.length) { el.innerHTML = '<div class="empty">No entries match these filters.</div>'; $('#trend-legend').innerHTML = ''; return; }
+  const times = list.map(e => e.date.getTime());
+  const min = new Date(Math.min(...times)), max = new Date(Math.max(...times));
+  const monthly = (max - min) / 864e5 > 190;
+  const bucketStart = d => monthly ? new Date(d.getFullYear(), d.getMonth(), 1) : new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
+  const next = d => monthly ? new Date(d.getFullYear(), d.getMonth() + 1, 1) : new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7);
+  const buckets = [];
+  const idx = new Map();
+  for (let d = bucketStart(min); d <= max; d = next(d)) { idx.set(dateKey(d), buckets.length); buckets.push({ start: d, by: {}, total: 0 }); }
+  for (const e of list) {
+    const b = buckets[idx.get(dateKey(bucketStart(e.date)))];
+    const c = catOf(e);
+    b.by[c] = (b.by[c] || 0) + e.hours; b.total += e.hours;
+  }
+  $('#trend-title').textContent = monthly ? 'Hours per month' : 'Hours per week';
+  const present = CATS.filter(c => buckets.some(b => b.by[c.id]));
+  $('#trend-legend').innerHTML = present.map(c => `<span><span class="dot" style="background:${color(c.id)}"></span>${c.name}</span>`).join('');
+
+  const W = Math.max(300, el.clientWidth || 640), H = 250;
+  const m = { t: 10, r: 6, b: 26, l: 44 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const ymax = niceMax(Math.max(...buckets.map(b => b.total)));
+  const y = v => m.t + ih - (v / ymax) * ih;
+  const n = buckets.length, bw = iw / n, barW = Math.max(3, Math.min(48, bw * 0.72));
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${monthly ? 'Monthly' : 'Weekly'} hours stacked by category">`;
+  for (let i = 0; i <= 4; i++) {
+    const v = (ymax / 4) * i, yy = y(v);
+    svg += `<line class="grid" x1="${m.l}" x2="${W - m.r}" y1="${yy}" y2="${yy}"/><text x="${m.l - 8}" y="${yy + 4}" text-anchor="end">${Math.round(v).toLocaleString('en-GB')}</text>`;
+  }
+  const every = Math.max(1, Math.ceil(n / Math.max(1, Math.floor(iw / 64))));
+  buckets.forEach((b, i) => {
+    const x = m.l + i * bw + (bw - barW) / 2;
+    let acc = 0;
+    for (const c of CATS) {
+      const v = b.by[c.id]; if (!v) continue;
+      const y0 = y(acc), y1 = y(acc + v);
+      const hgt = y0 - y1 - (acc > 0 ? 2 : 0);
+      if (hgt > 0.3) svg += `<rect x="${x}" y="${y1}" width="${barW}" height="${hgt}" style="fill:${color(c.id)}"/>`;
+      acc += v;
+    }
+    if (i % every === 0) svg += `<text x="${x + barW / 2}" y="${H - 8}" text-anchor="middle">${fmtDate(b.start, monthly ? { month: 'short', year: '2-digit' } : { day: 'numeric', month: 'short' })}</text>`;
+  });
+  buckets.forEach((b, i) => { svg += `<rect class="hit" data-i="${i}" x="${m.l + i * bw}" y="${m.t}" width="${bw}" height="${ih}"/>`; });
+  svg += '</svg>';
+  el.innerHTML = svg;
+  el.querySelectorAll('.hit').forEach(r => {
+    const b = buckets[+r.dataset.i];
+    bindTip(r, () => `<div class="t">${monthly ? fmtDate(b.start, { month: 'long', year: 'numeric' }) : 'Week of ' + fmtDate(b.start)}</div>` +
+      CATS.filter(c => b.by[c.id]).map(c => `<div class="r"><span><span class="dot" style="background:${color(c.id)}"></span>${c.name}</span><span>${h1(b.by[c.id])}</span></div>`).join('') +
+      `<div class="r tot"><span>Total</span><span>${h1(b.total)}</span></div>`);
+  });
+}
+
+function renderMatrix(list) {
+  const people = new Map();
+  for (const e of list) {
+    const p = people.get(e.person) || { name: e.person, team: e.team, total: 0, bill: 0, by: {} };
+    const c = catOf(e);
+    p.by[c] = (p.by[c] || 0) + e.hours; p.total += e.hours;
+    if (e.billable === true) p.bill += e.hours;
+    people.set(e.person, p);
+  }
+  const cols = CATS.filter(c => list.some(e => catOf(e) === c.id));
+  const target = +state.target || 0;
+  const { key, dir } = state.msort;
+  const val = p => key === 'name' ? p.name.toLowerCase() : key === 'total' ? p.total : key === 'bill' ? (state.hasBillable ? p.bill / p.total : 0) : (p.by[key] || 0);
+  const rows = [...people.values()].sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * dir; });
+  const arrow = k => key === k ? (dir < 0 ? ' ↓' : ' ↑') : '';
+  let html = `<thead><tr><th class="sortable" data-k="name">Person${arrow('name')}</th><th class="n sortable" data-k="total">Total${arrow('total')}</th>`;
+  if (state.hasBillable) html += `<th class="n sortable" data-k="bill">Billable${arrow('bill')}</th>`;
+  html += cols.map(c => `<th class="n sortable" data-k="${c.id}"><span class="dot" style="background:${color(c.id)}"></span>${c.name}${arrow(c.id)}</th>`).join('');
+  html += `<th>Training target</th></tr></thead><tbody>`;
+  if (!rows.length) html += `<tr><td colspan="${cols.length + 4}" class="empty">No entries match these filters.</td></tr>`;
+  for (const p of rows) {
+    html += `<tr><td class="person">${esc(p.name)}${p.team ? `<small>${esc(p.team)}</small>` : ''}</td><td class="n">${h1(p.total)}</td>`;
+    if (state.hasBillable) html += `<td class="n">${pct(p.bill / p.total)}</td>`;
+    for (const c of cols) {
+      const v = p.by[c.id] || 0, share = v / p.total;
+      html += v ? `<td class="cell" style="background:color-mix(in oklab, var(--seq) ${Math.round(Math.min(60, share * 110))}%, var(--surface))" title="${pct(share)} of ${esc(p.name)}'s time">${h1(v)}</td>` : `<td class="cell zero">–</td>`;
+    }
+    const tr = p.by.training || 0;
+    html += `<td>${target ? (tr >= target ? `<span class="chip good">✓ Met · ${h1(tr)}h</span>` : `<span class="chip warn">! ${h1(target - tr)}h short</span>`) : '<span class="muted">no target</span>'}</td></tr>`;
+  }
+  $('#matrix').innerHTML = html + '</tbody>';
+  $('#matrix').querySelectorAll('th.sortable').forEach(th => th.addEventListener('click', () => {
+    const k = th.dataset.k;
+    state.msort = { key: k, dir: state.msort.key === k ? -state.msort.dir : (k === 'name' ? 1 : -1) };
+    renderMatrix(filtered());
+  }));
+}
+
+const LEDGER_LIMIT = 300;
+function renderLedger(list) {
+  const counts = {};
+  list.forEach(e => { const c = catOf(e); counts[c] = (counts[c] || 0) + 1; });
+  const btns = [{ id: 'all', name: 'All', n: list.length }, ...CATS.filter(c => counts[c.id]).map(c => ({ ...c, n: counts[c.id] }))];
+  if (state.ledger.cat !== 'all' && !counts[state.ledger.cat]) state.ledger.cat = 'all';
+  $('#cat-filter').innerHTML = btns.map(b => `<button type="button" class="cat-btn" data-c="${b.id}" aria-pressed="${state.ledger.cat === b.id}">${b.id !== 'all' ? `<span class="dot" style="background:${color(b.id)}"></span>` : ''}${b.name} <span class="num muted">${b.n.toLocaleString('en-GB')}</span></button>`).join('');
+  $('#cat-filter').querySelectorAll('.cat-btn').forEach(b => b.addEventListener('click', () => { state.ledger.cat = b.dataset.c; renderLedger(filtered()); }));
+
+  const q = state.ledger.q.trim().toLowerCase();
+  const rows = list.filter(e => (state.ledger.cat === 'all' || catOf(e) === state.ledger.cat) &&
+    (!q || `${e.person} ${e.team} ${e.matter} ${e.narrative} ${e.text}`.toLowerCase().includes(q)))
+    .sort((a, b) => b.date - a.date || a.person.localeCompare(b.person));
+  const opts = CATS.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  let html = `<thead><tr><th>Date</th><th>Person</th><th>Matter</th><th>Narrative</th><th class="n">Hours</th>${state.hasBillable ? '<th>Billable</th>' : ''}<th>Category</th></tr></thead><tbody>`;
+  for (const e of rows.slice(0, LEDGER_LIMIT)) {
+    const c = catOf(e);
+    const others = e.tags.filter(t => t !== c).map(t => CAT[t].name);
+    html += `<tr data-id="${e.id}"${e.override ? ' class="edited"' : ''}><td class="num" style="white-space:nowrap">${fmtDate(e.date, { day: '2-digit', month: 'short', year: '2-digit' })}</td>
+      <td>${esc(e.person)}</td><td>${esc(e.matter)}</td><td class="narr">${esc(e.narrative || e.text)}</td><td class="n">${h1(e.hours)}</td>
+      ${state.hasBillable ? `<td>${e.billable === true ? 'Yes' : e.billable === false ? 'No' : '<span class="muted">?</span>'}</td>` : ''}
+      <td><select aria-label="Category for this entry">${opts.replace(`value="${c}"`, `value="${c}" selected`)}</select>${e.override ? '<span class="tag">edited</span>' : ''}${others.length ? `<span class="alt">also matches ${others.join(', ').toLowerCase()}</span>` : ''}</td></tr>`;
+  }
+  if (!rows.length) html += `<tr><td colspan="7" class="empty">No entries to show.</td></tr>`;
+  $('#ledger').innerHTML = html + '</tbody>';
+  $('#ledger-more').textContent = rows.length > LEDGER_LIMIT ? `Showing the latest ${LEDGER_LIMIT} of ${rows.length.toLocaleString('en-GB')} entries. Narrow it with the filters or search.` : '';
+  $('#ledger').querySelectorAll('select').forEach(sel => sel.addEventListener('change', () => {
+    const e = state.entries[+sel.closest('tr').dataset.id];
+    e.override = sel.value === e.auto ? null : sel.value;
+    renderAll();
+  }));
+  const edits = state.entries.filter(e => e.override).length;
+  $('#edit-count').textContent = edits ? `${edits} correction${edits === 1 ? '' : 's'}` : '';
+}
+
+/* ---------- Tooltip ---------- */
+const tip = $('#tip');
+function bindTip(el, html) {
+  const show = ev => {
+    tip.innerHTML = html(); tip.hidden = false;
+    let x, y;
+    if (ev.type === 'focus') { const r = el.getBoundingClientRect(); x = r.right; y = r.top; }
+    else { x = ev.clientX; y = ev.clientY; }
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    tip.style.left = Math.max(8, Math.min(window.innerWidth - tw - 8, x + 14)) + 'px';
+    tip.style.top = Math.max(8, Math.min(window.innerHeight - th - 8, y + 14)) + 'px';
+  };
+  const hide = () => { tip.hidden = true; };
+  el.addEventListener('pointermove', show);
+  el.addEventListener('focus', show);
+  el.addEventListener('pointerleave', hide);
+  el.addEventListener('blur', hide);
+}
+
+/* ---------- Filters & setup UI ---------- */
+function fillFilters() {
+  const teams = [...new Set(state.entries.map(e => e.team).filter(Boolean))].sort();
+  const people = [...new Set(state.entries.filter(e => !state.filter.team || e.team === state.filter.team).map(e => e.person))].sort();
+  $('#f-team').innerHTML = `<option value="">All teams</option>` + teams.map(t => `<option${t === state.filter.team ? ' selected' : ''}>${esc(t)}</option>`).join('');
+  $('#f-team').disabled = !teams.length;
+  if (state.filter.person && !people.includes(state.filter.person)) state.filter.person = '';
+  $('#f-person').innerHTML = `<option value="">Everyone</option>` + people.map(p => `<option${p === state.filter.person ? ' selected' : ''}>${esc(p)}</option>`).join('');
+  const t = state.entries.map(e => e.date.getTime());
+  if (t.length) {
+    $('#f-from').min = $('#f-to').min = dateKey(new Date(Math.min(...t)));
+    $('#f-from').max = $('#f-to').max = dateKey(new Date(Math.max(...t)));
+  }
+  $('#f-from').value = state.filter.from; $('#f-to').value = state.filter.to;
+}
+
+function fillSetup() {
+  const sheets = state.wb ? state.wb.SheetNames : ['Sample'];
+  $('#m-sheet').innerHTML = sheets.map(s => `<option${s === state.sheet ? ' selected' : ''}>${esc(s)}</option>`).join('');
+  $('#m-sheet').disabled = sheets.length < 2;
+  const dateSet = new Set(state.dateCols.map(d => d.i));
+  const opts = `<option value="-1">— none —</option>` + state.headers.map((h, i) => dateSet.has(i) ? '' : `<option value="${i}">${esc(h)}</option>`).join('');
+  document.querySelectorAll('[data-map]').forEach(sel => { sel.innerHTML = opts; sel.value = String(state.map[sel.dataset.map] ?? -1); });
+  document.querySelectorAll('.long-only').forEach(el => { el.hidden = state.wide; });
+  $('#m-unit').value = state.unit;
+  $('#m-dmy').value = state.dmy ? 'dmy' : 'mdy';
+  $('#m-scan').innerHTML = state.headers.map((h, i) => dateSet.has(i) ? '' :
+    `<label><input type="checkbox" value="${i}"${state.scan.includes(i) ? ' checked' : ''}>${esc(h)}</label>`).join('');
+  const layout = state.wide
+    ? `One column per date (${state.dateCols.length} date columns, ${fmtDate(state.dateCols[0].date, { day: 'numeric', month: 'short' })} – ${fmtDate(state.dateCols[state.dateCols.length - 1].date)})`
+    : 'One row per time entry';
+  $('#setup-summary').textContent = `${layout} · headings in row ${state.headerIdx + 1}`;
+}
+
+function parseReport() {
+  const s = state.skipped, parts = [`${state.entries.length.toLocaleString('en-GB')} entries read`];
+  if (s.noDate) parts.push(`${s.noDate} rows skipped with no readable date`);
+  if (s.noHours) parts.push(`${s.noHours} rows skipped with no time recorded`);
+  if (s.total) parts.push(`${s.total} total rows ignored`);
+  if (!state.hasBillable) parts.push('no billable column, so entries matching no rule count as client work');
+  $('#parse-report').textContent = parts.join(' · ');
+  return !state.entries.length || s.noDate > state.entries.length * 0.2;
+}
+
+function fillRules() {
+  $('#billable-client').checked = state.billableIsClient;
+  $('#rules').innerHTML = PRIORITY.map((id, i) => `<div class="rule"><label for="r-${id}"><span class="dot" style="background:${color(id)}"></span>${CAT[id].name}<small>${i + 1} of ${PRIORITY.length}</small></label>
+    <textarea id="r-${id}" data-id="${id}">${esc((state.rules[id] || []).join(', '))}</textarea></div>`).join('');
+}
+
+/* ---------- Loading ---------- */
+function loadRows(rows, { keepFilters = false } = {}) {
+  state.rows = rows;
+  analyse(rows);
+  buildEntries();
+  if (!keepFilters) state.filter = { team: '', person: '', from: '', to: '' };
+  state.ledger = { cat: 'all', q: '' };
+  $('#search').value = '';
+  fillSetup(); fillFilters();
+  const trouble = parseReport();
+  if (!state.sample) $('#setup').open = trouble || $('#setup').open;
+  renderAll();
+}
+
+function sheetRows(name) {
+  const ws = state.wb.Sheets[name];
+  return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null, blankrows: false });
+}
+
+async function loadFile(file) {
+  if (!window.XLSX) { showNotice('Spreadsheet reader unavailable.', 'The library that reads Excel files did not load. Check your connection and reload the page.'); return; }
+  try {
+    const buf = await file.arrayBuffer();
+    // Keep CSV cells as text so day-first dates aren't read as US month-first.
+    state.wb = XLSX.read(buf, { type: 'array', raw: /\.csv$/i.test(file.name) });
+    const best = state.wb.SheetNames.map(n => ({ n, rows: sheetRows(n) })).sort((a, b) => b.rows.length - a.rows.length)[0];
+    state.sheet = best.n; state.sample = false; state.fileName = file.name;
+    $('#filename').textContent = file.name;
+    loadRows(best.rows);
+    $('#setup').open = true;
+    showNotice(`${file.name}.`, `Read from sheet “${state.sheet}”. Check the column choices below. If anything looks wrong, change a column and select Apply columns. Nothing leaves this browser.`);
+  } catch (err) {
+    showNotice('Could not read that file.', `${err.message || err}. Save it as .xlsx or .csv and try again.`);
+  }
+}
+function showNotice(title, body) { $('#notice-title').textContent = title; $('#notice-body').textContent = body; }
+
+/* ---------- Sample data ---------- */
+function sampleRows() {
+  let seed = 20260930;
+  const rnd = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const weighted = w => { const tot = Object.values(w).reduce((s, v) => s + v, 0); let r = rnd() * tot; for (const [k, v] of Object.entries(w)) { if ((r -= v) < 0) return k; } return Object.keys(w)[0]; };
+  const people = [
+    ['Priya Raman', 'Corporate', 'Partner'], ['Tom Hale', 'Corporate', 'Senior Associate'], ['Aisha Okafor', 'Corporate', 'Associate'], ['Leo Brandt', 'Corporate', 'Associate'], ['Mei Chen', 'Corporate', 'Trainee'],
+    ['Daniel Ruiz', 'Disputes', 'Partner'], ['Hannah Wood', 'Disputes', 'Senior Associate'], ['Samir Patel', 'Disputes', 'Associate'], ['Grace Lin', 'Disputes', 'Trainee'],
+    ['Olivia Grant', 'Real Estate', 'Partner'], ['Ben Carter', 'Real Estate', 'Senior Associate'], ['Fatima Noor', 'Real Estate', 'Associate'], ['Jack Ellis', 'Real Estate', 'Trainee'],
+  ];
+  const matters = {
+    Corporate: ['Harbourline Logistics – acquisition of Tern Freight', 'Ashdown Energy – JV restructuring', 'Brightwater Health – Series B'],
+    Disputes: ['Corvid Bank v Mallory', 'Kestrel Foods – supply dispute', 'Arden Insurance – coverage claim'],
+    'Real Estate': ['Pellham Estates – portfolio sale', 'Northgate Council – lease renewals', 'Quayside Retail – site acquisition'],
+  };
+  const billWork = {
+    Corporate: ['Drafting share purchase agreement', 'Reviewing disclosure letter', 'Due diligence review of key contracts', 'Revising completion checklist', 'Call with client re next steps', 'Board minutes and ancillaries'],
+    Disputes: ['Preparing witness statement', 'Reviewing disclosure bundle', 'Research on limitation point', 'Drafting letter before action', 'Attending hearing', 'Call with counsel re strategy'],
+    'Real Estate': ['Due diligence review of leases', 'Negotiating heads of terms', 'Reviewing title and searches', 'Drafting licence to assign', 'Call with client re rent review'],
+  };
+  const prospects = ['Meridian Rail', 'Oakfield Pharma', 'Lumen Capital', 'Stanway Group'];
+  const topics = ['UK merger control', 'the Economic Crime Act', 'service charge disputes', 'AI in disclosure', 'warranty and indemnity insurance'];
+  const events = ['the sector breakfast', 'a legal tech meetup', 'a client roundtable', 'the regional law society dinner'];
+  const fill = s => s.replace('{p}', pick(prospects)).replace('{t}', pick(topics)).replace('{e}', pick(events));
+  const non = {
+    pitch: ['Pitch preparation for {p} panel review', 'Drafting tender response – {p}', 'Fee proposal for {p} refinancing', 'Credentials pack for {p} beauty parade', 'RFP questions call with {p} procurement'],
+    bd: ['Client lunch with {p} GC', 'Networking at {e}', 'Drafting article on {t} for client newsletter', 'BD planning with sector group', 'Speaking at {e}'],
+    training: ['CPD webinar: {t}', 'Internal training session on {t}', 'E-learning module: anti-money laundering', 'Workshop: negotiation skills', 'Attending course on {t}'],
+    knowledge: ['Updating SPA precedent', 'Know-how note on {t}', 'Reviewing template engagement letter', 'PSL catch-up re practice note on {t}'],
+    people: ['Mentoring session with junior associate', 'Graduate recruitment interviews', 'Appraisal meeting', 'Supervising trainee research', 'Vacation scheme assessment day'],
+    probono: ['Pro bono advice session at law centre', 'Legal clinic – housing queries', 'Pro bono: charity governance review'],
+    admin: ['Timesheet catch-up and file management', 'Team meeting', 'Conflict check and file opening', 'Internal meeting re WIP', 'Expenses and admin'],
+    vague: ['General', 'Internal matters', 'Catch-up', 'Misc non-chargeable', 'Reading', 'Sector group'],
+  };
+  const roles = {
+    Partner: { bill: 0.5, w: { pitch: 3, bd: 4, people: 2, admin: 1.5, knowledge: 0.5, training: 0.5, probono: 0.5, vague: 0.6 } },
+    'Senior Associate': { bill: 0.7, w: { pitch: 1.5, bd: 1.5, people: 1.5, knowledge: 1.5, training: 1, admin: 1.5, probono: 0.7, vague: 0.7 } },
+    Associate: { bill: 0.8, w: { pitch: 1, bd: 0.8, knowledge: 1.5, training: 1.5, admin: 1.5, probono: 1, vague: 1 } },
+    Trainee: { bill: 0.62, w: { training: 4, knowledge: 1.5, admin: 1.5, pitch: 0.7, bd: 0.5, probono: 1, people: 0.3, vague: 1 } },
+  };
+  const rows = [['Fee earner', 'Team', 'Role', 'Date', 'Matter', 'Narrative', 'Hours', 'Billable']];
+  const start = new Date(2026, 5, 29);
+  for (let d = 0; d < 7 * 13; d++) {
+    const day = new Date(start.getFullYear(), start.getMonth(), start.getDate() + d);
+    if (day.getDay() === 0 || day.getDay() === 6) continue;
+    const serial = Date.UTC(day.getFullYear(), day.getMonth(), day.getDate()) / 864e5 + 25569;
+    for (const [name, team, role] of people) {
+      if (rnd() < 0.06) continue;
+      const r = roles[role];
+      let left = Math.round((6.5 + rnd() * 3) * 10) / 10;
+      const parts = 2 + Math.floor(rnd() * 3);
+      for (let k = 0; k < parts && left > 0; k++) {
+        const h = k === parts - 1 ? left : Math.max(0.1, Math.round(left * (0.25 + rnd() * 0.4) * 10) / 10);
+        left = Math.round((left - h) * 10) / 10;
+        if (rnd() < r.bill) rows.push([name, team, role, serial, pick(matters[team]), pick(billWork[team]), h, 'Y']);
+        else {
+          const cat = weighted(r.w);
+          const matter = cat === 'pitch' ? 'Prospects' : cat === 'probono' ? 'Pro bono' : 'Non-chargeable';
+          rows.push([name, team, role, serial, matter, fill(pick(non[cat])), h, 'N']);
+        }
+      }
+    }
+  }
+  return rows;
+}
+function loadSample() {
+  state.wb = null; state.sheet = 'Sample'; state.sample = true; state.fileName = '';
+  $('#filename').textContent = 'or drop a file here';
+  showNotice('Sample data.', 'These are invented people and matters. Load your own export to replace them. Your file is read in this browser and is not uploaded anywhere.');
+  state.dmy = true;
+  loadRows(sampleRows());
+}
+
+/* ---------- Events ---------- */
+$('#file').addEventListener('change', e => { const f = e.target.files[0]; if (f) loadFile(f); e.target.value = ''; });
+$('#load-sample').addEventListener('click', loadSample);
+const drop = $('#drop');
+['dragenter', 'dragover'].forEach(t => document.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(t => document.addEventListener(t, e => { e.preventDefault(); if (t === 'drop' || !e.relatedTarget) drop.classList.remove('over'); }));
+document.addEventListener('drop', e => { const f = e.dataTransfer?.files?.[0]; if (f) loadFile(f); });
+
+$('#m-sheet').addEventListener('change', e => { if (!state.wb) return; state.sheet = e.target.value; loadRows(sheetRows(state.sheet)); $('#setup').open = true; });
+$('#m-dmy').addEventListener('change', e => { state.dmy = e.target.value === 'dmy'; });
+$('#apply-map').addEventListener('click', () => {
+  const dmyChanged = ($('#m-dmy').value === 'dmy') !== state.dmy;
+  state.dmy = $('#m-dmy').value === 'dmy';
+  if (dmyChanged) analyse(state.rows);
+  document.querySelectorAll('[data-map]').forEach(sel => { state.map[sel.dataset.map] = +sel.value; });
+  state.unit = $('#m-unit').value;
+  state.scan = [...$('#m-scan').querySelectorAll('input:checked')].map(i => +i.value);
+  buildEntries(); fillSetup(); fillFilters(); parseReport(); renderAll();
+});
+
+$('#f-team').addEventListener('change', e => { state.filter.team = e.target.value; fillFilters(); renderAll(); });
+$('#f-person').addEventListener('change', e => { state.filter.person = e.target.value; renderAll(); });
+$('#f-from').addEventListener('change', e => { state.filter.from = e.target.value; renderAll(); });
+$('#f-to').addEventListener('change', e => { state.filter.to = e.target.value; renderAll(); });
+$('#f-reset').addEventListener('click', () => { state.filter = { team: '', person: '', from: '', to: '' }; fillFilters(); renderAll(); });
+$('#target').value = state.target;
+$('#target').addEventListener('input', e => { state.target = +e.target.value || 0; store.set('tl.target', state.target); renderMatrix(filtered()); });
+let qTimer;
+$('#search').addEventListener('input', e => { clearTimeout(qTimer); qTimer = setTimeout(() => { state.ledger.q = e.target.value; renderLedger(filtered()); }, 150); });
+
+$('#apply-rules').addEventListener('click', () => {
+  state.rules = Object.fromEntries(PRIORITY.map(id => [id, $('#r-' + id).value.split(/[,\n]/).map(s => s.trim()).filter(Boolean)]));
+  state.billableIsClient = $('#billable-client').checked;
+  store.set('tl.rules', state.rules); store.set('tl.billableIsClient', state.billableIsClient);
+  const before = state.entries.map(e => e.auto);
+  categoriseAll();
+  const moved = state.entries.filter((e, i) => e.auto !== before[i]).length;
+  $('#rules-report').textContent = `Rules applied. ${moved.toLocaleString('en-GB')} entries changed category.`;
+  renderAll();
+});
+$('#reset-rules').addEventListener('click', () => {
+  state.rules = JSON.parse(JSON.stringify(DEFAULT_RULES)); state.billableIsClient = true;
+  store.set('tl.rules', state.rules); store.set('tl.billableIsClient', true);
+  fillRules(); categoriseAll(); renderAll();
+  $('#rules-report').textContent = 'Default rules restored.';
+});
+
+$('#copy').addEventListener('click', async () => {
+  const head = ['Date', 'Person', 'Team', 'Matter', 'Narrative', 'Hours', 'Billable', 'Category', 'Rule category', 'Also matches', 'Corrected'];
+  const clean = s => String(s ?? '').replace(/[\t\r\n]+/g, ' ');
+  const lines = [head.join('\t'), ...filtered().map(e => [dateKey(e.date), e.person, e.team, e.matter, e.narrative || e.text, h1(e.hours),
+    e.billable === true ? 'Yes' : e.billable === false ? 'No' : '', CAT[catOf(e)].name, CAT[e.auto].name,
+    e.tags.filter(t => t !== e.auto).map(t => CAT[t].name).join('; '), e.override ? 'Yes' : ''].map(clean).join('\t'))];
+  const text = lines.join('\n');
+  const btn = $('#copy');
+  try { await navigator.clipboard.writeText(text); btn.textContent = `Copied ${lines.length - 1} rows`; }
+  catch {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); btn.textContent = `Copied ${lines.length - 1} rows`; } catch { btn.textContent = 'Copy blocked by browser'; }
+    ta.remove();
+  }
+  setTimeout(() => { btn.textContent = 'Copy all rows for Excel'; }, 2500);
+});
+
+let rTimer;
+new ResizeObserver(() => { clearTimeout(rTimer); rTimer = setTimeout(() => renderTrend(filtered()), 120); }).observe($('#trend'));
+
+fillRules();
+loadSample();
+})();
+</script>
